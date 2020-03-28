@@ -1,0 +1,94 @@
+
+
+spark-submit --master spark://fmmaster02:7077 --total-executor-cores 20 --driver-memory 7g --executor-memory 12g  --class com.focusmedia.newgenerate.GenerateNewMacScanInfo  ./six_focus_etl.jar  eight_infosys0430 2018_04_30 6 上海 six
+
+
+select t.* from
+(select *,substr(mac,0,6) as submac from mac_view_info where time='2018_05_28') t
+left join
+db01.mac_factory as p
+ on t.submac=p.mac_index_factory
+ where factory_name is not null
+
+insert overwrite table tmp_twominute_mac_log_fake partition(time='2018_05_17')
+ select t.devid,t.mac,t.scan_time from (select *,substr(mac,0,6) as submac from tmp_twominute_mac_log where time='2018_05_17' ) t
+ left join
+ db01.mac_factory as p
+ on t.submac=p.mac_index_factory
+ where factory_name is not null;
+
+
+
+//根据去重的一天中的排期数据来生成某个城市，版本，批次下对应广告的播放次数
+select count(*) from
+(
+select citycode,buildinglist,uploadcount,adcontent,count(1)*60 as play_nums from
+(
+select buildinglist,buildinglistdate,citycode,plnid,adcontent,nplseqno,nplinnerseqno,uploadcount,adlength
+ from realtimeschedulescreenfam_by_day where buildinglistdate='2018-06-20'
+ group by buildinglist,buildinglistdate,citycode,plnid,adcontent,nplseqno,nplinnerseqno,uploadcount,adlength
+) t group by citycode,buildinglist,uploadcount,adcontent
+)
+
+
+
+//FactVersionTime
+select city_name, sum(ft) from (
+   select a.citycode,a.city_name,devid,inner_sn,(ct*bf) as ft from (
+      select a.citycode,a.city_name,a.devid devid,a.inner_sn inner_sn,a.ct ct,b.bf bf from
+    (
+          select a.citycode,a.city_name,a.devid devid,a.inner_sn inner_sn,a.sv sv,a.uploadcount,b.ct ct from
+           (
+             select citycode,city_name,devid,inner_sn,sch_version as sv ,max(uploadcount) uploadcount
+              from parquet_table.ad_play_info where  substr(time,1,10)='2018_07_01'
+         group by citycode,city_name,devid,inner_sn,sch_version
+          )
+       as a left join
+       (
+        select citycode, buildinglist,uploadcount,count(1) ct from
+       (
+         select citycode, buildinglist,uploadcount,nplseqno,nplinnerseqno from parquet_table.realtimeschedulescreenfam_by_day
+           where  buildinglistdate='2018-07-01'
+             group by citycode, buildinglist,uploadcount,nplseqno,nplinnerseqno
+        ) group by citycode, buildinglist,uploadcount
+       ) as b
+       on a.citycode=b.citycode and  a.sv=b.buildinglist and cast (a.uploadcount as int)=cast(b.uploadcount as int)
+     ) as a left join
+  (
+  select a.buildinglist bu,a.citycode,a.packagecode pk,a.uploadcount up,b.basefrequency bf from
+  (
+    select buildinglist,citycode,packagecode,uploadcount,max(sumadlength) as adlength from realtimebuildinglist
+       where sumadlength is not null  group by buildinglist,citycode,packagecode,uploadcount
+  ) as a left join
+   (
+   select buildinglist,citycode,packagecode,uploadcount,sumadlength,basefrequency from
+   realtimebuildinglist where sumadlength is not null
+   group by buildinglist,citycode,packagecode,uploadcount,sumadlength,basefrequency
+   ) as b
+   on a.citycode=b.citycode and a.buildinglist=b.buildinglist and a.packagecode=b.packagecode and a.uploadcount=b.uploadcount and a.adlength=b.sumadlength
+   ) as b on a.citycode=b.citycode and  a.sv=b.bu and (cast(a.uploadcount as int))=(cast(b.up as int))
+   )
+ ) group by city_name;
+
+
+
+
+
+
+/data/spark-2.0.0-bin-hadoop2.7/bin/spark-submit --master spark://fmmaster02:7077 --total-executor-cores 20 --driver-memory 7g --executor-memory 10g  --class com.focusmedia.stats.GenerateSecondsDev ./summer_result.jar  summer_result /data/focusmedia/mrd/GuangZhou.xlsx  30 2000003376
+
+
+nohup /data/spark-2.0.0-bin-hadoop2.7/bin/spark-submit --master spark://fmmaster02:7077 --total-executor-cores 20 --driver-memory 6g --executor-memory 8g --conf spark.scheduler.listenerbus.eventqueue.size=100000  --class com.focusmedia.stats.GenerateSecondsDev ./summer_result.jar  summer_result_beijing /data/focusmedia/mrd/Beijing_001000009330.xlsx 30 001000009330 beijing  >> generate_second_beijing1.log 2>&1 &
+nohup /data/spark-2.0.0-bin-hadoop2.7/bin/spark-submit --master spark://fmmaster02:7077 --total-executor-cores 20 --driver-memory 6g --executor-memory 8g --conf spark.scheduler.listenerbus.eventqueue.size=100000  --class com.focusmedia.stats.GenerateSecondsDev ./summer_result.jar  summer_result_shanghai /data/focusmedia/mrd/Shanghai_002100004971.xlsx 30 002100004971 shanghai  >> generate_second_shanghai1.log 2>&1 &
+nohup /data/spark-2.0.0-bin-hadoop2.7/bin/spark-submit --master spark://fmmaster02:7077 --total-executor-cores 20 --driver-memory 6g --executor-memory 8g --conf spark.scheduler.listenerbus.eventqueue.size=100000  --class com.focusmedia.stats.GenerateSecondsDev ./summer_result.jar  summer_result_shenzheng /data/focusmedia/mrd/ShenZheng.xlsx 30 075500004645 shenzheng  >> generate_second_shenzheng1.log 2>&1 &
+nohup /data/spark-2.0.0-bin-hadoop2.7/bin/spark-submit --master spark://fmmaster02:7077 --total-executor-cores 20 --driver-memory 6g --executor-memory 8g --conf spark.scheduler.listenerbus.eventqueue.size=100000  --class com.focusmedia.stats.GenerateSecondsDev ./summer_result.jar  summer_result_guangzhou /data/focusmedia/mrd/GuangZhou.xlsx 30 002000003376 guangzhou  >> generate_second_guangzhou.log 2>&1 &
+
+
+
+
+
+
+
+
+
+
