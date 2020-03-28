@@ -15,6 +15,7 @@ public class MyTest {
 
 
     public static void main(String[] args) throws ParseException {
+        //hello world
         SparkConf conf=new SparkConf();
         conf.setMaster("local[*]");
         //conf.set("spark.scheduler.listenerbus.eventqueue.size","50000");
